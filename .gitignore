@@ -3,3 +3,4 @@ logs
 *.pkl
 *.png
 *.csv
+notebooks/mlruns
