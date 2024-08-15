@@ -1,52 +1,72 @@
 from flask import Flask, request, jsonify
 import tensorflow as tf
+import tensorflow_hub as hub
 import pickle
 
 app = Flask(__name__)
 
+# Modèle USE à partir de TensorFlow Hub
+use_layer = hub.KerasLayer(
+    "https://tfhub.dev/google/universal-sentence-encoder/4", trainable=False)
 
-def load_data(x_path='../notebooks/model/X_reduced.pkl', y_path='../notebooks/model/y.pkl'):
-    with open(x_path, 'rb') as f:
-        X = pickle.load(f)
-    with open(y_path, 'rb') as f:
-        y = pickle.load(f)
-    return X, y
+# Modèle de classification pré-entraîné après USE
+classification_model = tf.keras.models.load_model(
+    "../notebooks/model/use_model.keras")
+
+# Objets du modèle BoW+SVD (pour obtenir les tags)
 
 
-def load_model_objects():
-    with open('../notebooks/model/vectorizer.pkl', 'rb') as f:
-        vectorizer = pickle.load(f)
-    with open('../notebooks/model/svd.pkl', 'rb') as f:
-        svd = pickle.load(f)
+def load_bow_svd_objects():
     with open('../notebooks/model/top_tags.pkl', 'rb') as f:
         top_tags = pickle.load(f)
-    return vectorizer, svd, top_tags
+    return top_tags
 
 
-X, y = load_data()
-vectorizer, svd, top_tags = load_model_objects()
-
-model = tf.keras.models.load_model('../notebooks/best_model.keras')
+top_tags = load_bow_svd_objects()
 
 
-def transform_text_to_bow(text):
-    X_bow = vectorizer.transform([text])
-    return svd.transform(X_bow)
+def transform_text_to_use(text):
+    input_tensor = tf.convert_to_tensor([text], dtype=tf.string)
+    embeddings = use_layer(input_tensor).numpy()
+    return embeddings
+
+# Endpoint Flask pour le modèle USE
 
 
-@app.route('/predict_tags', methods=['POST'])
-def predict_tags():
-    question_text = request.json.get('question_text')
-    if not question_text:
-        return jsonify({'error': 'No question text provided'}), 400
+@app.route('/predict_use_tags', methods=['POST'])
+def predict_use_tags():
+    try:
+        question_text = request.json.get('question_text')
+        if not question_text:
+            return jsonify({'error': 'No question text provided'}), 400
 
-    question_vector = transform_text_to_bow(question_text)
-    predicted_tags_probabilities = model.predict(question_vector)
-    predicted_tags = (predicted_tags_probabilities > 0.1).astype(int)
-    predicted_tag_names = [top_tags[i] for i in range(
-        len(predicted_tags[0])) if predicted_tags[0][i] == 1]
+        # Transformation du texte en vecteur USE
+        question_vector_use = transform_text_to_use(question_text)
 
-    return jsonify({'predicted_tags': predicted_tag_names, 'probabilities': predicted_tags_probabilities.tolist()})
+        # Mdèle de classification pour prédire les tags
+        predicted_tags_probabilities_use = classification_model.predict(
+            question_vector_use)
+
+        # Index du tag avec la probabilité maximale
+        max_prob_index_use = predicted_tags_probabilities_use.argmax()
+        max_prob_tag_use = top_tags[max_prob_index_use]
+
+        # Tags prédits ayant une probabilité > 0.01
+        predicted_tag_names_use = [top_tags[i] for i in range(
+            len(top_tags)) if predicted_tags_probabilities_use[0][i] > 0.01]
+
+        max_prob_value_use = float(
+            predicted_tags_probabilities_use[0][max_prob_index_use])
+
+        # Tags prédits et le tag avec la probabilité maximale
+        return jsonify({
+            'predicted_tags': predicted_tag_names_use,
+            'max_probability_tag': max_prob_tag_use,
+            'max_probability_value': max_prob_value_use
+        })
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':
