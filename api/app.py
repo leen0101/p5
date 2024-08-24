@@ -4,41 +4,49 @@ import tensorflow_hub as hub
 import pickle
 import os
 import logging
-import tensorflow as tf
 # pylint: disable=import-error
-from tensorflow.keras.models import load_model  # pylint: disable=no-name-in-module
+from tensorflow.keras.models import load_model
 
 app = Flask(__name__)
 
 # Configure le niveau de logging
 logging.basicConfig(level=logging.INFO)
 
-# Charge le module USE (Universal Sentence Encoder) depuis TensorFlow Hub
+# Chemins de fichiers
+MODEL_PATH = os.path.abspath(
+    "C:/Users/leenc/Documents/openclassrooms/p5/api/mlruns/artifacts/use_model.h5")
+PICKLE_PATH = os.path.abspath(
+    "C:/Users/leenc/Documents/openclassrooms/p5/api/mlruns/artifacts/top_tags.pkl")
+
+# Charger le module USE (Universal Sentence Encoder) depuis TensorFlow Hub
 use_layer = hub.KerasLayer(
     "https://tfhub.dev/google/universal-sentence-encoder/4", trainable=False)
 
-# Définit le chemin du modèle de classification
-model_path = os.path.abspath(
-    "C:/Users/leenc/Documents/openclassrooms/p5/api/mlruns/artifacts/use_model.h5")
-
-# Charge le modèle de classification
-try:
-    classification_model = load_model(model_path)
-    logging.info(f"Modèle de classification chargé depuis {model_path}")
-except Exception as e:
-    logging.error(f"Erreur modèle de classification : {str(e)}")
-    raise e
-
-# Objets BoW+SVD
+# Charger le modèle de classification
 
 
-def load_bow_svd_objects():
+def load_classification_model(model_path):
     try:
-        pkl_path = os.path.abspath(
-            'C:/Users/leenc/Documents/openclassrooms/p5/api/mlruns/artifacts/top_tags.pkl')
-        with open(pkl_path, 'rb') as f:
+        model = load_model(model_path)
+        logging.info(f"Modèle de classification chargé depuis {model_path}")
+        return model
+    except Exception as e:
+        logging.error(
+            f"Erreur lors du chargement du modèle de classification : {str(e)}")
+        raise e
+
+
+classification_model = load_classification_model(MODEL_PATH)
+
+# Charger les objets BoW+SVD (les étiquettes de classification)
+
+
+def load_bow_svd_objects(pickle_path):
+    try:
+        with open(pickle_path, 'rb') as f:
             top_tags = pickle.load(f)
-        logging.info(f"Objets BoW+SVD chargés avec succès depuis {pkl_path}")
+        logging.info(
+            f"Objets BoW+SVD chargés avec succès depuis {pickle_path}")
         return top_tags
     except Exception as e:
         logging.error(
@@ -46,10 +54,9 @@ def load_bow_svd_objects():
         raise e
 
 
-# Charge les objets BoW+SVD (les étiquettes de classification)
-top_tags = load_bow_svd_objects()
+top_tags = load_bow_svd_objects(PICKLE_PATH)
 
-# Texte en embeddings USE
+# Transformer un texte en embeddings USE
 
 
 def transform_text_to_use(text):
@@ -62,13 +69,23 @@ def transform_text_to_use(text):
             f"Erreur lors de la transformation du texte en embeddings USE : {str(e)}")
         raise e
 
-# Endpoint prédictions du modèle USE
+# Endpoint pour les prédictions du modèle USE
 
 
 @app.route('/predict', methods=['POST'])
 def predict_use_tags():
     try:
-        question_text = request.json.get('question_text')
+        # Vérifie que la requête est bien au format JSON
+        if not request.is_json:
+            return jsonify({'error': 'Invalid request format, JSON expected'}), 400
+
+        # Tente de récupérer le texte de la question depuis la requête JSON
+        try:
+            question_text = request.json.get('question_text')
+        except Exception:
+            return jsonify({'error': 'Invalid JSON format'}), 400
+
+        # Vérifie que le texte de la question est bien présent
         if not question_text:
             return jsonify({'error': 'Texte de la question non fourni'}), 400
 
@@ -103,8 +120,3 @@ def predict_use_tags():
     except Exception as e:
         logging.error(f"Erreur lors de la prédiction : {str(e)}")
         return jsonify({'error': str(e)}), 500
-
-
-# Lancement de l'application Flask
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5001)
