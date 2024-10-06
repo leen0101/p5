@@ -4,3 +4,7 @@ logs
 *.png
 *.csv
 notebooks/mlruns
+.env
+notebooks/mlflow_artifacts
+model
+api/mlruns
