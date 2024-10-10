@@ -1,0 +1,12 @@
+Flask
+mlflow
+tensorflow
+numpy
+nltk
+joblib
+gunicorn
+google-cloud-storage
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+gensim
