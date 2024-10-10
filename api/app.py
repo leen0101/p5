@@ -1,122 +1,150 @@
 from flask import Flask, request, jsonify
+import mlflow
 import tensorflow as tf
-import tensorflow_hub as hub
-import pickle
-import os
+import joblib
 import logging
-# pylint: disable=import-error
-from tensorflow.keras.models import load_model
+import os
+from mlflow.tracking import MlflowClient
 
-app = Flask(__name__)
-
-# Configure le niveau de logging
+# Configure le logging
 logging.basicConfig(level=logging.INFO)
 
-# Chemins de fichiers
-MODEL_PATH = os.path.abspath(
-    "C:/Users/leenc/Documents/openclassrooms/p5/api/mlruns/artifacts/use_model.h5")
-PICKLE_PATH = os.path.abspath(
-    "C:/Users/leenc/Documents/openclassrooms/p5/api/mlruns/artifacts/top_tags.pkl")
+app = Flask(__name__)
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "f8bc1d91ca98.json"
 
-# Charger le module USE (Universal Sentence Encoder) depuis TensorFlow Hub
-use_layer = hub.KerasLayer(
-    "https://tfhub.dev/google/universal-sentence-encoder/4", trainable=False)
+# Configure MLflow
+tracking_uri = os.getenv("MLFLOW_TRACKING_URI",
+                         "https://mlflowp51-975919512217.us-central1.run.app")
+mlflow.set_tracking_uri(tracking_uri)
+mlflow.set_experiment("Text_Processing_Experiment")
 
-# Charger le modèle de classification
+client = MlflowClient()
+
+# Trouve le run ID le plus récent basé sur le nom de l'artefact
 
 
-def load_classification_model(model_path):
+def find_most_recent_run_id_by_artifact(artifact_name):
+    """Recherche le run ID associé à un artefact spécifique et retourne le plus récent."""
+    experiment = client.get_experiment_by_name("Text_Processing_Experiment")
+    runs = client.search_runs(
+        experiment_ids=[experiment.experiment_id], order_by=["start_time DESC"])
+
+    for run in runs:
+        artifacts = client.list_artifacts(run.info.run_id)
+        for artifact in artifacts:
+            if artifact.is_dir:
+                sub_artifacts = client.list_artifacts(
+                    run.info.run_id, artifact.path)
+                for sub_artifact in sub_artifacts:
+                    if sub_artifact.path.endswith(artifact_name):
+                        logging.info(f"Run trouvé: {run.info.run_id} pour {
+                                     artifact_name}")
+                        return run.info.run_id
+            else:
+                if artifact.path.endswith(artifact_name):
+                    logging.info(f"Run trouvé: {run.info.run_id} pour {
+                                 artifact_name}")
+                    return run.info.run_id
+    logging.warning(f"Aucun run trouvé pour {artifact_name}")
+    return None
+
+
+# ID des runs trouvés automatiquement
+vectorizer_run_id = find_most_recent_run_id_by_artifact("vectorizer.pkl")
+svd_run_id = find_most_recent_run_id_by_artifact("svd.pkl")
+top_tags_run_id = find_most_recent_run_id_by_artifact("top_tags.pkl")
+model_run_id = find_most_recent_run_id_by_artifact("bow_svd_model.h5")
+
+if not all([vectorizer_run_id, svd_run_id, top_tags_run_id, model_run_id]):
+    raise Exception("Impossible de trouver les artefacts nécessaires.")
+
+# Télécharge les artefacts en fonction des `run_id` trouvés
+
+
+def download_artifact(run_id, artifact_name):
     try:
-        model = load_model(model_path)
-        logging.info(f"Modèle de classification chargé depuis {model_path}")
-        return model
+        path = mlflow.artifacts.download_artifacts(
+            f"runs:/{run_id}/{artifact_name}")
+        logging.info(f"Artefact {artifact_name} téléchargé avec succès.")
+        return path
     except Exception as e:
-        logging.error(
-            f"Erreur lors du chargement du modèle de classification : {str(e)}")
-        raise e
+        logging.error(f"Erreur lors du téléchargement de {artifact_name}: {e}")
+        raise
 
 
-classification_model = load_classification_model(MODEL_PATH)
+vectorizer_path = download_artifact(vectorizer_run_id, "vectorizer.pkl")
+svd_path = download_artifact(svd_run_id, "svd.pkl")
+top_tags_path = download_artifact(top_tags_run_id, "top_tags.pkl")
+model_path = download_artifact(model_run_id, "bow_svd_model.h5")
 
-# Charger les objets BoW+SVD (les étiquettes de classification)
+# Charge les artefacts
+with open(vectorizer_path, 'rb') as f:
+    vectorizer = joblib.load(f)
+
+with open(svd_path, 'rb') as f:
+    svd = joblib.load(f)
+
+with open(top_tags_path, 'rb') as f:
+    top_tags = joblib.load(f)
+
+# Charge le modèle
+try:
+    model = tf.keras.models.load_model(model_path)
+    logging.info("Modèle chargé avec succès.")
+except Exception as e:
+    logging.error(f"Erreur lors du chargement du modèle : {e}")
+    raise
+
+# Transforme le texte en vecteur BoW + SVD
 
 
-def load_bow_svd_objects(pickle_path):
+def transform_text_to_bow_svd(text):
+    X_bow = vectorizer.transform([text])  # Convertit en vecteur BoW
+    X_svd = svd.transform(X_bow)  # Réduit la dimensionnalité avec SVD
+    return X_svd
+
+# Fonction pour prédire les tags
+
+
+def predict_tags(question_vector, threshold=0.01):
+    predictions = model.predict(question_vector)
+    tag_probabilities = [(top_tags[i], float(predictions[0][i]))
+                         for i in range(len(top_tags))]
+    filtered_tag_probabilities = [
+        (tag, prob) for tag, prob in tag_probabilities if prob >= threshold]
+    sorted_tag_probabilities = sorted(
+        filtered_tag_probabilities, key=lambda x: x[1], reverse=True)
+    top_5_tags = sorted_tag_probabilities[:10]  # Limite à 10 tags
+    main_tag = top_5_tags[0][0] if top_5_tags else None
+    return top_5_tags, main_tag
+
+# Route POST pour suggérer des tags
+
+
+@app.route('/suggestion', methods=['POST'])
+def suggest_tags():
     try:
-        with open(pickle_path, 'rb') as f:
-            top_tags = pickle.load(f)
-        logging.info(
-            f"Objets BoW+SVD chargés avec succès depuis {pickle_path}")
-        return top_tags
-    except Exception as e:
-        logging.error(
-            f"Erreur lors du chargement des objets BoW+SVD : {str(e)}")
-        raise e
-
-
-top_tags = load_bow_svd_objects(PICKLE_PATH)
-
-# Transformer un texte en embeddings USE
-
-
-def transform_text_to_use(text):
-    try:
-        input_tensor = tf.convert_to_tensor([text], dtype=tf.string)
-        embeddings = use_layer(input_tensor).numpy()
-        return embeddings
-    except Exception as e:
-        logging.error(
-            f"Erreur lors de la transformation du texte en embeddings USE : {str(e)}")
-        raise e
-
-# Endpoint pour les prédictions du modèle USE
-
-
-@app.route('/predict', methods=['POST'])
-def predict_use_tags():
-    try:
-        # Vérifie que la requête est bien au format JSON
         if not request.is_json:
             return jsonify({'error': 'Invalid request format, JSON expected'}), 400
 
-        # Tente de récupérer le texte de la question depuis la requête JSON
-        try:
-            question_text = request.json.get('question_text')
-        except Exception:
-            return jsonify({'error': 'Invalid JSON format'}), 400
+        question = request.json.get('question', '')
+        if not question:
+            return jsonify({'error': 'No question provided'}), 400
 
-        # Vérifie que le texte de la question est bien présent
-        if not question_text:
-            return jsonify({'error': 'Texte de la question non fourni'}), 400
+        # Transforme la question en vecteur BoW + SVD
+        question_vector_bow_svd = transform_text_to_bow_svd(question)
+        top_5_tags, main_tag = predict_tags(question_vector_bow_svd)
 
-        # Transforme le texte en vecteur USE
-        question_vector_use = transform_text_to_use(question_text)
+        response = {
+            'main_tag': main_tag,
+            'suggested_tags': [tag for tag, _ in top_5_tags]
+        }
+        return jsonify(response)
 
-        # Prédiction des étiquettes à l'aide du modèle de classification
-        predicted_tags_probabilities_use = classification_model.predict(
-            question_vector_use)[0]
-
-        # Associe chaque tag à sa probabilité
-        tag_probabilities = [(tag, float(prob)) for tag, prob in zip(
-            top_tags, predicted_tags_probabilities_use)]
-
-        # Trie les tags par probabilité décroissante
-        tag_probabilities_sorted = sorted(
-            tag_probabilities, key=lambda x: x[1], reverse=True)
-
-        # Limite à un maximum de 5 tags
-        top_5_tags = tag_probabilities_sorted[:5]
-
-        # Sépare les tags et leurs probabilités pour l'affichage
-        predicted_tag_names_use = [tag for tag, prob in top_5_tags]
-        max_prob_tag_use, max_prob_value_use = top_5_tags[0]
-
-        # Retourne les étiquettes prédites (5) et l'étiquette avec la probabilité la plus élevée
-        return jsonify({
-            'predicted_tags': predicted_tag_names_use,
-            'max_probability_tag': max_prob_tag_use,
-            'max_probability_value': max_prob_value_use
-        })
     except Exception as e:
-        logging.error(f"Erreur lors de la prédiction : {str(e)}")
+        logging.error(f"Erreur lors de la suggestion de tags: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8080)
