@@ -37,15 +37,15 @@ def find_most_recent_run_id_by_artifact(artifact_name):
                     run.info.run_id, artifact.path)
                 for sub_artifact in sub_artifacts:
                     if sub_artifact.path.endswith(artifact_name):
-                        logging.info(f"Run trouvé: {run.info.run_id} pour {
-                                     artifact_name}")
+                        logging.info("Run trouvé: " + run.info.run_id +
+                                     artifact_name)
                         return run.info.run_id
             else:
                 if artifact.path.endswith(artifact_name):
-                    logging.info(f"Run trouvé: {run.info.run_id} pour {
-                                 artifact_name}")
+                    logging.info("Run trouvé: "+run.info.run_id+"pour " +
+                                 artifact_name)
                     return run.info.run_id
-    logging.warning(f"Aucun run trouvé pour {artifact_name}")
+    logging.warning("Aucun run trouvé pour "+artifact_name)
     return None
 
 
@@ -64,11 +64,11 @@ if not all([vectorizer_run_id, svd_run_id, top_tags_run_id, model_run_id]):
 def download_artifact(run_id, artifact_name):
     try:
         path = mlflow.artifacts.download_artifacts(
-            f"runs:/{run_id}/{artifact_name}")
-        logging.info(f"Artefact {artifact_name} téléchargé avec succès.")
+            "runs:/"+run_id+"/"+artifact_name)
+        logging.info("Artefact " + artifact_name+" téléchargé avec succès.")
         return path
     except Exception as e:
-        logging.error(f"Erreur lors du téléchargement de {artifact_name}: {e}")
+        logging.error("Erreur lors du téléchargement de "+artifact_name+": "+e)
         raise
 
 
@@ -92,7 +92,7 @@ try:
     model = tf.keras.models.load_model(model_path)
     logging.info("Modèle chargé avec succès.")
 except Exception as e:
-    logging.error(f"Erreur lors du chargement du modèle : {e}")
+    logging.error("Erreur lors du chargement du modèle : "+e)
     raise
 
 # Transforme le texte en vecteur BoW + SVD
@@ -142,7 +142,7 @@ def suggest_tags():
         return jsonify(response)
 
     except Exception as e:
-        logging.error(f"Erreur lors de la suggestion de tags: {e}")
+        logging.error("Erreur lors de la suggestion de tags: " + e)
         return jsonify({'error': str(e)}), 500
 
 
