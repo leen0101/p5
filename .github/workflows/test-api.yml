@@ -34,16 +34,19 @@ jobs:
           pip install -r requirements.txt 
 
 
-      # Authentification Google Cloud
-      - name: Set up Google Cloud authentication
+  
+      # Configure Google Cloud auth
+      - name: Setup Google Cloud authentication
+        run: |
+          echo "${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}" > /tmp/key.json
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
-        run: |
-          echo $GOOGLE_APPLICATION_CREDENTIALS > /tmp/key.json
-          gcloud auth activate-service-account --key-file=/tmp/key.json
 
+      # Set environment variable for Google credentials
+      - name: Set GOOGLE_APPLICATION_CREDENTIALS environment variable
+        run: echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/key.json" >> $GITHUB_ENV
 
-
+        
       # Tests
       - name: Run API tests
         working-directory: ./api 

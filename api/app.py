@@ -10,7 +10,8 @@ from mlflow.tracking import MlflowClient
 logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "f8bc1d91ca98.json"
+google_credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = google_credentials_path
 
 # Configure MLflow
 tracking_uri = os.getenv("MLFLOW_TRACKING_URI",
