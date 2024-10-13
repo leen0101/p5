@@ -1,0 +1,40 @@
+name: API Test Workflow
+
+# Déclenche le workflow à chaque push ou pull request sur la branche test
+on:
+  push:
+    branches:
+      - test
+  pull_request:
+    branches:
+      - test
+
+# Définition du job
+jobs:
+  test-api:
+    name: Run API Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      # Récupére le code source
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # Installe Python
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.12'
+
+      # Dépendances
+      - name: Install dependencies
+        working-directory: ./api   
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt 
+
+      # Tests
+      - name: Run API tests
+        working-directory: ./api 
+        run: |
+          pytest test_app.py
