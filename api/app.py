@@ -42,7 +42,7 @@ def find_most_recent_run_id_by_artifact(artifact_name):
                         return run.info.run_id
             else:
                 if artifact.path.endswith(artifact_name):
-                    logging.info("Run trouvé: "+run.info.run_id+"pour " +
+                    logging.info("Run trouvé: "+run.info.run_id+" pour " +
                                  artifact_name)
                     return run.info.run_id
     logging.warning("Aucun run trouvé pour "+artifact_name)
@@ -68,7 +68,8 @@ def download_artifact(run_id, artifact_name):
         logging.info("Artefact " + artifact_name+" téléchargé avec succès.")
         return path
     except Exception as e:
-        logging.error("Erreur lors du téléchargement de "+artifact_name+": "+e)
+        logging.error("Erreur lors du téléchargement de " +
+                      artifact_name+": " + str(e))
         raise
 
 
@@ -92,7 +93,7 @@ try:
     model = tf.keras.models.load_model(model_path)
     logging.info("Modèle chargé avec succès.")
 except Exception as e:
-    logging.error("Erreur lors du chargement du modèle : "+e)
+    logging.error("Erreur lors du chargement du modèle : " + str(e))
     raise
 
 # Transforme le texte en vecteur BoW + SVD
@@ -142,7 +143,7 @@ def suggest_tags():
         return jsonify(response)
 
     except Exception as e:
-        logging.error("Erreur lors de la suggestion de tags: " + e)
+        logging.error("Erreur lors de la suggestion de tags: " + str(e))
         return jsonify({'error': str(e)}), 500
 
 
