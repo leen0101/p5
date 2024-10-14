@@ -1,4 +1,7 @@
 # API de Traitement de Texte et Prédiction de Tags
+Pour tester l'api: https://apip5-975919512217.us-central1.run.app/suggestion
+
+## Introduction
 Ce dépôt contient une API de traitement de texte et de prédiction de tags. L'API utilise le modèle BoW (Bag of Words) avec SVD de machine learning pour prédire les tags pertinents à partir d'une question fournie. Le projet est construit avec Flask pour l'API, tandis que les modèles sont entraînés et gérés via MLflow, en anglais. Les notebooks inclut plusieurs approches de traitement des données : Bag of Words (BoW) avec SVD, Word2Vec, et Universal Sentence Encoder (USE), avec des tests pour la partie de modèle non supervisée.
 
 ## Fonctionnalités
